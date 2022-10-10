@@ -1,0 +1,1185 @@
+/****** Object:  StoredProcedure [dbo].[BMPPowerPredictionSumNewMetric3]    Script Date: 4/12/2022 8:28:55 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+-- Power Prediction Formula Worker
+ALTER PROCEDURE [dbo].[BMPPowerPredictionSumNewMetric3](@DSASpeedPoint NVARCHAR(50) = 'Center',
+@NumberOfPlates FLOAT = 1,
+@PreWettedPlateDepth FLOAT = 2.3622,
+@PlateWidth FLOAT = 5.4864,
+@PlateDepth FLOAT = 3.9624,
+@WettedPlateArea FLOAT = 0.0,
+@BelowWettedPlate FLOAT = 1.00,
+@CenterOfWettedPlate FLOAT = 0.0,
+@WheelDiameter FLOAT = 0.0,
+@DragCoefficient FLOAT = 1.90,
+@WaterDensity FLOAT = 1029,
+@GearRatio FLOAT = 63.33, --51.46,
+@MidWettedPlateSpeed FLOAT = 0.3333333333,
+@WaterAccelerationFactor FLOAT = 1.57,
+@ElectricalEfficiency FLOAT = .80,
+@KnotsToFtPerSec FLOAT = 1.68781,
+@FtLbsPerSecTokW FLOAT = 0.00135582,
+@GeneratorOverdriveFactor FLOAT = 3.363,
+@PerGeneratorKW FLOAT = 125,
+@PerGeneratorOverdrive FLOAT = 0.0,
+@NumberOfGenerators FLOAT = 1,
+@TotalOverdrivekW FLOAT = 0.0,
+@MaxNetPowerkW FLOAT = 0.0,
+@MetersPerSecondToKnots FLOAT = 1.94384,
+@SpeedBumpFactor FLOAT = 1.0,
+@AnnualHours FLOAT = 8760,
+@TargetCapacityFactor FLOAT = 0.70,
+@TargetCapacitykWHours FLOAT = 0.0,
+@ActualCapacitykWHours FLOAT = 0.0,
+@ActualCapacityFactor FLOAT = 0.0,
+@DaysModeled FLOAT = 0.0,
+@DaysModeledPctOfYear FLOAT = 0.0,
+@TargetkWNameplate FLOAT = 0.0,
+@TargetUnitMWHours FLOAT = 0.0,
+@ActualkWNameplate FLOAT = 0.0,
+@ActualUnitMWHours FLOAT = 0.0,
+@ActualHoursPctOfTarget FLOAT = 0.0,
+@MaxRawWaterSpeed FLOAT = 0.0,
+@NumberOfMaintenanceDays FLOAT = 10.0,
+@MaintenanceHoursAtTargetCapPct FLOAT = 0.0,
+@ExtraHoursInModel FLOAT = 0.0,
+@OvershootHours FLOAT = 0.0,
+
+-- Generator Related
+@RatedRPM FLOAT = 268,
+@RatedTorque FLOAT = 14949,
+@RatedVolts FLOAT = 572,
+@FrictionLoss FLOAT = 7.521676199,
+@AmpsLoss FLOAT = 8.0000649866,
+@MaxGeneratorElectricalPower FLOAT = 0,
+@MaxGeneratorRPM FLOAT = 0,
+@MaxGeneratorTorque FLOAT = 0,
+@MaxGeneratorVoltage FLOAT = 0,
+@TargetForceNewtons FLOAT = 0,
+@SummaryOnly INT = 0, -- 0 = Detail Only, 1 = Summary Only, 2 = Both
+@ReturnTop INT = 100000,
+@PlateWidthInFeet FLOAT = 0,
+@PlateDepthInFeet FLOAT = 0,
+@GeneratorConstant FLOAT = 9538.88658409518,
+@CapAcceleratedWaterSpeed FLOAT = 5.30740525423568,
+@CapMidWettedPlateSpeed FLOAT = 2.03161770359406
+)
+
+--SELECT
+--	@DSASpeedPoint = 'Center',
+--	@GearRatio = 60.8175364, -- float
+--	@GeneratorOverdriveFactor = 3.2, -- 3.362, -- float   1.850(originally given to Scott)
+--	@PerGeneratorKW = 175, -- float
+--	@NumberOfGenerators = 1.0, -- float
+--	@SpeedBumpFactor = 1.0, -- float
+--	@NumberOfMaintenanceDays = 10.0, -- float
+
+--	@TargetForceNewtons = (1.1948 * 233500.11033523) - 61694, -- 233500.110335223			-- 0 = No need to override
+
+--	@SummaryOnly = 1,
+
+--	@NumberOfPlates = 1.0, -- float
+
+--	-- Now in Meters
+--	@PreWettedPlateDepth = 2.3622, -- 7.75, -- float
+--	@PlateWidth = 4.8768, -- 3.6576, -- 12.0, -- float
+--	@PlateDepth = 3.9624, -- 13.0, -- float
+
+--	@WettedPlateArea = 0.0, -- float
+--	@BelowWettedPlate = 1.0, -- float
+--	@CenterOfWettedPlate = 0.0, -- float
+--	@WheelDiameter = 0.0, -- float
+--	@DragCoefficient = 1.9, -- float
+--	@WaterDensity = 1029, --1.99658928, -- float
+--	@MidWettedPlateSpeed = 0.333333333, -- float
+--	@WaterAccelerationFactor = 1.57, -- float
+--	@ElectricalEfficiency = .80, -- float
+--	@KnotsToFtPerSec = 1.68781, -- float
+--	@FtLbsPerSecTokW = 0.00135581795, -- float
+--	@PerGeneratorOverdrive = 0.0, -- float
+--	@TotalOverdrivekW = 0.0, -- float
+--	@MetersPerSecondToKnots = 1.94384, -- float
+--	@AnnualHours = 8760.0, -- float
+--	@TargetCapacityFactor = .70, -- float
+--	@TargetCapacitykWHours = 0.0, -- float
+--	@ActualCapacitykWHours = 0.0, -- float
+--	@ActualCapacityFactor = 0.0, -- float
+--	@DaysModeled = 0.0, -- float
+--	@DaysModeledPctOfYear = 0.0, -- float
+--	@TargetkWNameplate = 0.0, -- float
+--	@TargetUnitMWHours = 0.0, -- float
+--	@ActualkWNameplate = 0.0, -- float
+--	@ActualUnitMWHours = 0.0, -- float
+--	@ActualHoursPctOfTarget = 0.0, -- float
+--	@MaintenanceHoursAtTargetCapPct = 0.0, -- float
+--	@ExtraHoursInModel = 0.0, -- float
+--	@OvershootHours = 0.0, -- float
+
+--	@RatedRPM = 268,
+--	@RatedTorque = 14949,
+--	@RatedVolts = 572,
+--	@FrictionLoss = 7.521676199,
+--	@AmpsLoss = 8.0000649866
+AS
+
+/*
+	Revision History
+		1/16/2020 - EB
+			Original
+		1/20/2020 - EB
+			Add Generator Losses
+		1/21/2020 - EB
+			Add Option to SUM every Hour or Day
+		2/5/2020 - EB
+			Convert to all Metrics
+			Enable Force Capping
+		2/8/2020 - EB
+			New Composite Force Calculation
+		2/20/2020 - EB
+			Get rid of optimized memory tables
+		2/26/2020 - EB
+			In order to try and speed up (particulary for Azure), use a DISTINCT table
+			This requires us to pass in the # of days modeled, rather than calculate it - so allow this to override the calculated number
+		8/24/2020 - EB
+			Add the SmithMoorehouse Speed Table
+			Add an optional "PlateWidthInFeet" and "PlateDepthInFeet"
+		4/21/2021 - EB
+			Fix the max force formula to take into account capped numbers
+			Add a new column "Wheel To Water Speed Ratio"
+
+			Try a new method where we cap as we go
+		4/23/2021 - EB
+			Try to cap generator torque then let it spin up to max generator speed
+		4/30/2021 - EB
+			Try an Water Acceleration Formula instead of just a constant
+		5/1/2021 - EB
+			Cap Generator Torque and then Cap both if over power
+		5/10/2021 - EB
+			Figure out why compressed tables provide significantly different outputs
+*/
+
+DECLARE
+	@SecondsInYear FLOAT = 60*60*24*365;
+
+IF @PlateWidthInFeet <> 0 SELECT @PlateWidth = @PlateWidthInFeet * 0.3048 ;
+
+IF @PlateDepthInFeet <> 0 SELECT @PlateDepth = @PlateDepthInFeet * 0.3048 ;
+
+DECLARE @DSATemp TABLE(
+GMT DATETIME NOT NULL PRIMARY KEY,
+AST DATETIME NOT NULL,
+[Seconds in Period] FLOAT NULL,
+[Speed (M/S)] FLOAT NULL) ;
+
+BEGIN	-- Loading Different Data Points
+IF @DSASpeedPoint = 'SM2kn'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSASM2kn
+	ORDER BY GMT ;
+
+IF @DSASpeedPoint = 'Center'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSACenter
+	ORDER BY GMT ;
+
+IF @DSASpeedPoint = 'CenterD'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSACenterD
+	ORDER BY [Speed (M/S)] ;
+
+IF @DSASpeedPoint = 'Center46thru48'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSACenter46thru48
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'NW'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSANW
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'NE'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSANE
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'SE'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSASE
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'SW'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSASW
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Point1'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint1
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Point2'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint2
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Point3'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint3
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Point4'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint4
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Point5'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint5
+	ORDER BY GMT ;
+
+IF @DSASpeedPoint = 'Point5D'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint5D
+	ORDER BY [Speed (M/S)] ;
+ELSE IF @DSASpeedPoint = 'Point6'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint6
+	ORDER BY GMT ;
+
+IF @DSASpeedPoint = 'Point6D'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSAPoint6D
+	ORDER BY [Speed (M/S)] ;
+
+-- New Data Points
+ELSE IF @DSASpeedPoint = 'DP1_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP1_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP1_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP1_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP2_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP2_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP2_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP2_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP3_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP3_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP3_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP3_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP4_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP4_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP4_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP4_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP5_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP5_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP5_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP5_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP6_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP6_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP6_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP6_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP7_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP7_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP7_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP7_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP8_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP8_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP8_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP8_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP9_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP9_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP9_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP9_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP10_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP10_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP10_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP10_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP11_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP11_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP11_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP11_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP12_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP12_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP12_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP12_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP13_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP13_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP13_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP13_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP14_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP14_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP14_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP14_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP15_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP15_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP15_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP15_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP16_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP16_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP16_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP16_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP17_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP17_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP17_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP17_5M
+	ORDER BY GMT ;
+
+IF @DSASpeedPoint = 'DP17D'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP17D
+	ORDER BY [Speed (M/S)] ;
+ELSE IF @DSASpeedPoint = 'DP18_0.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP18_0.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP18_2.5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.[DSADP18_2.5M]
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP19_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP19_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP19_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP19_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP20_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP20_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP20_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP20_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP21_1M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP21_1M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'DP21_5M'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSADP21_5M
+	ORDER BY GMT ;
+ELSE IF @DSASpeedPoint = 'Sample'
+	INSERT INTO @DSATemp(GMT, AST, [Seconds in Period], [Speed (M/S)])
+	SELECT
+		GMT,
+		AST,
+		[Seconds in Period],
+		[Speed (M/S)]
+	FROM dbo.DSASample
+	ORDER BY GMT ;
+END		-- Loading Different Data Points
+
+BEGIN -- Calculate Some of the other "Parameters"
+	-- Do this based upon Total Number of Entries
+	-- A year can have =60*24*365/10 10 Minute Increments
+	DECLARE @ModeledPctOfYear FLOAT
+	SELECT
+		@ModeledPctOfYear = CAST(SUM([Seconds in Period]) AS FLOAT) / @SecondsInYear,
+		@MaxRawWaterSpeed = MAX([Speed (M/S)] * @MetersPerSecondToKnots)
+		
+		FROM @DSATemp
+
+--SELECT @ModeledPctOfYear AS ModeledPctOfYear		
+
+
+	--SELECT
+	--	@DaysModeled = CASE
+	--					   WHEN ISNULL(@DaysModeled, 0) = 0 THEN DATEDIFF(DAY, MIN(GMT), MAX(GMT)) - 1
+	--					   ELSE @DaysModeled
+	--				   END,
+	--	@MaxRawWaterSpeed = MAX([Speed (M/S)] * @MetersPerSecondToKnots)
+	--FROM @DSATemp ;
+
+	--SELECT @DaysModeledPctOfYear = @DaysModeled / 365 ;
+	--PRINT @DaysModeledPctOfYear
+
+--SELECT
+--	@AnnualHours AS AnnualHours,
+--	@TargetCapacityFactor AS TargetCapacityFactor,
+--	@ModeledPctOfYear AS ModeledPctOfYear
+
+
+	SELECT
+		@WettedPlateArea = @PlateWidth * @PlateDepth * @NumberOfPlates,
+		@CenterOfWettedPlate = @PreWettedPlateDepth + (0.5 * @PlateDepth),
+		@WheelDiameter = (@PreWettedPlateDepth + @PlateDepth + @BelowWettedPlate) * 2,
+		@PerGeneratorOverdrive = @GeneratorOverdriveFactor * @PerGeneratorKW,
+		@TotalOverdrivekW = @PerGeneratorOverdrive * @NumberOfGenerators,
+		@TargetCapacitykWHours = @AnnualHours * @TargetCapacityFactor * @ModeledPctOfYear,
+		@TargetkWNameplate = @PerGeneratorKW * @NumberOfGenerators,
+		@MaintenanceHoursAtTargetCapPct = @NumberOfMaintenanceDays * 24 * @TargetCapacityFactor * @ModeledPctOfYear ;
+
+	SELECT @TargetUnitMWHours = (@TargetCapacitykWHours * @TargetkWNameplate) / 1000 ;
+END -- Calculate Some of the other "Parameters"
+ 
+-- Constants used for Force Adjustments
+DECLARE
+	@x FLOAT = 0.5 * @WaterDensity * @DragCoefficient * @WettedPlateArea,
+	@constTip FLOAT = (@PreWettedPlateDepth + @PlateDepth) / @CenterOfWettedPlate,
+	@constTop FLOAT = @PreWettedPlateDepth / @CenterOfWettedPlate ;
+
+TRUNCATE TABLE dbo.FinalTable
+
+INSERT INTO dbo.FinalTable(GMT, AST, [Seconds in Period], [Ambient Water Speed (M/S)])
+SELECT
+	GMT,
+	AST,
+	[Seconds in Period],
+	[Speed (M/S)]
+FROM @DSATemp
+
+-- Default Acceleration
+UPDATE dbo.FinalTable
+SET [Accel Water Speed (M/S)] = ft.[Ambient Water Speed (M/S)] * @WaterAccelerationFactor * @SpeedBumpFactor
+FROM dbo.FinalTable ft
+	WHERE 1 = 1
+
+-- Use the formula instead
+--UPDATE dbo.FinalTable
+--SET 
+--	[AccelerationFactor] = 
+--		(0.0187*POWER(ft.[Speed (M/S)],3))-
+--		(0.1733*POWER(ft.[Speed (M/S)],2))+
+--		(0.231*ft.[Speed (M/S)])+
+--		1.9855,
+--	[Accel Speed (M/S)] = ft.[Speed (M/S)] *
+--	(
+--		(0.0187*POWER(ft.[Speed (M/S)],3))-
+--		(0.1733*POWER(ft.[Speed (M/S)],2))+
+--		(0.231*ft.[Speed (M/S)])+
+--		1.9855
+--			)
+--	* @SpeedBumpFactor
+--FROM dbo.FinalTable ft
+--	 WHERE 1 = 1
+
+UPDATE dbo.FinalTable
+SET AccelerationFactor = ft.[Accel Water Speed (M/S)] / ft.[Ambient Water Speed (M/S)]
+FROM dbo.FinalTable ft
+	 WHERE 1 = 1
+
+-- Mid Plate
+UPDATE dbo.FinalTable
+SET
+	[Mid Wetted Plate Speed M/S] = ft.[Accel Water Speed (M/S)] * @MidWettedPlateSpeed
+FROM dbo.FinalTable ft
+	 WHERE 1 = 1
+
+-- Calculate the Rest of the items
+	EXEC dbo.BMPPowerPredictorLoop
+		@CenterOfWettedPlate,
+		@GearRatio,
+		@DragCoefficient,
+		@WaterDensity,
+		@WettedPlateArea,
+		@PreWettedPlateDepth,
+		@PlateDepth,
+		@NumberOfGenerators,
+		@RatedRPM,
+		@PerGeneratorKW,
+		@FrictionLoss,
+		@RatedVolts,
+		@TotalOverdrivekW,
+		@RatedTorque,
+		@ElectricalEfficiency,
+		@AmpsLoss
+
+
+
+------------------------- Recalculate if Torque is too high
+UPDATE dbo.FinalTable
+	SET
+		[New Target Torque] =
+			CASE
+				WHEN ft.[Generator Torque (Nm)] > @RatedTorque
+					AND ft.[Generator Input Power kW] < @TotalOverdrivekW
+					 THEN @RatedTorque ELSE NULL
+			END
+FROM dbo.FinalTable ft
+	 WHERE 1 = 1
+
+UPDATE dbo.FinalTable
+	SET
+		[New Target Generator RPMs] =
+			CASE
+				WHEN ft.[New Target Torque] IS NOT NULL THEN
+					ft.[Generator Input Power kW] * @GeneratorConstant / ft.[New Target Torque]
+				ELSE
+					NULL
+			END
+FROM dbo.FinalTable ft
+	 WHERE 1 = 1
+
+UPDATE dbo.FinalTable
+	SET
+		[Mid Wetted Plate Speed M/S] =
+			CASE
+				WHEN ft.[New Target Generator RPMs] IS NOT NULL THEN
+					(ft.[New Target Generator RPMs] * @CenterOfWettedPlate * 2 * PI()) / (@GearRatio * 60)
+				ELSE
+					ft.[Mid Wetted Plate Speed M/S]
+			END
+FROM dbo.FinalTable ft
+	 WHERE 1 = 1
+
+DECLARE @LoopCount INT = 0
+
+WHILE @LoopCount < 10
+BEGIN
+	EXEC dbo.BMPPowerPredictorLoop
+		@CenterOfWettedPlate,
+		@GearRatio,
+		@DragCoefficient,
+		@WaterDensity,
+		@WettedPlateArea,
+		@PreWettedPlateDepth,
+		@PlateDepth,
+		@NumberOfGenerators,
+		@RatedRPM,
+		@PerGeneratorKW,
+		@FrictionLoss,
+		@RatedVolts,
+		@TotalOverdrivekW,
+		@RatedTorque,
+		@ElectricalEfficiency,
+		@AmpsLoss
+
+	SELECT @LoopCount = @LoopCount + 1
+END
+
+-- Now Handle any that are over the max power number
+UPDATE dbo.FinalTable
+	SET
+		[Accel Water Speed (M/S)] = @CapAcceleratedWaterSpeed,
+		[Mid Wetted Plate Speed M/S] = @CapMidWettedPlateSpeed,
+		Spilling = 1
+FROM dbo.FinalTable ft
+	WHERE ft.[Generator Input Power kW] > @TotalOverdrivekW
+
+EXEC dbo.BMPPowerPredictorLoop
+	@CenterOfWettedPlate,
+	@GearRatio,
+	@DragCoefficient,
+	@WaterDensity,
+	@WettedPlateArea,
+	@PreWettedPlateDepth,
+	@PlateDepth,
+	@NumberOfGenerators,
+	@RatedRPM,
+	@PerGeneratorKW,
+	@FrictionLoss,
+	@RatedVolts,
+	@TotalOverdrivekW,
+	@RatedTorque,
+	@ElectricalEfficiency,
+	@AmpsLoss
+
+-- This Back into the FORCE number no longer works with our generator constraints
+--SELECT @LoopCount = 0
+--WHILE @LoopCount < 2
+--BEGIN
+--	-- Wheel Speed Adjustments
+--	UPDATE
+--		dbo.FinalTable
+--	SET
+--		[a] = 0.25 * @x * (2 + POWER(@constTip, 2) + POWER(@constTop, 2)),
+--		[b] = -0.5 * ft.[Accel Water Speed (M/S)] * @x * (2 + @constTop + @constTip),
+--		[c] = (@x * POWER(ft.[Accel Water Speed (M/S)], 2)
+--			   - CASE
+--					 WHEN @TargetForceNewtons = 0 THEN ft.[New Force Newtons]
+--					 ELSE CASE
+--							  WHEN ft.[New Force Newtons] > @TargetForceNewtons THEN @TargetForceNewtons
+--							  ELSE ft.[New Force Newtons]
+--						  END
+--				 END)
+--	FROM dbo.FinalTable ft
+--		 WHERE 1 = 1
+
+
+--	UPDATE
+--		dbo.FinalTable
+--	SET
+--		[Mid Wetted Plate Speed M/S] = CASE
+--										 WHEN @TargetForceNewtons = 0 THEN ft.[Mid Wetted Plate Speed M/S]
+--										 ELSE
+--											 CASE
+--												 WHEN ft.[New Force Newtons] > @TargetForceNewtons THEN
+--		(0 - ft.[b] - SQRT((POWER(ft.[b], 2) - (4 * ft.[a] * ft.[c])))) / (2 * ft.[a])
+--												 ELSE ft.[Mid Wetted Plate Speed M/S]
+--											 END
+--									 END
+--	FROM dbo.FinalTable ft
+--		 WHERE 1 = 1
+
+--	EXEC dbo.BMPPowerPredictorLoop
+--		@CenterOfWettedPlate,
+--		@GearRatio,
+--		@DragCoefficient,
+--		@WaterDensity,
+--		@WettedPlateArea,
+--		@PreWettedPlateDepth,
+--		@PlateDepth,
+--		@NumberOfGenerators,
+--		@RatedRPM,
+--		@PerGeneratorKW,
+--		@FrictionLoss,
+--		@RatedVolts,
+--		@TotalOverdrivekW,
+--		@RatedTorque,
+--		@ElectricalEfficiency,
+--		@AmpsLoss = 0.0
+
+--	SELECT @LoopCount = @LoopCount + 1
+--END
+
+--	--------------------------------------------------------------------------DEBUG
+--	SELECT
+--		ft.*,
+--			@TargetForceNewtons AS TargetForceNewtons
+--		FROM dbo.FinalTable ft
+--		ORDER BY ft.GMT ;
+
+--		RETURN ;
+--	--------------------------------------------------------------------------DEBUG
+
+
+-- Calculate Summaries
+-- Special for Smith Moorehouse
+IF @DSASpeedPoint = 'SM2kn'
+	SELECT @ActualUnitMWHours = SUM(ft.[Net Power Generated kW Seconds]) / 3600 / 1000 * @DaysModeled * 144
+	FROM dbo.FinalTable ft ;
+ELSE
+	SELECT @ActualUnitMWHours = SUM(ft.[Net Power Generated kW Seconds]) / 3600 / 1000
+	FROM dbo.FinalTable ft ;
+
+DECLARE
+	@MaxAcceleratedSpeed FLOAT,
+	@MaxWheelToWaterRatio FLOAT,
+	@MaxGeneratorInputPowerkW FLOAT,
+	@MaxPressureNewtonsPerSqMeter FLOAT,
+	@MaxForceNewtons FLOAT,
+	@OverdrivePercentage FLOAT,
+	@SpillingPercentage FLOAT
+
+SELECT
+	@MaxAcceleratedSpeed = MAX(ft.[Accel Water Speed (M/S)]),
+	@MaxWheelToWaterRatio = MAX(ft.[Wheel To Water Speed Ratio]),
+	@MaxGeneratorInputPowerkW = MAX(ft.[Generator Input Power kW]),
+	@MaxGeneratorTorque = MAX(ft.[Generator Torque (Nm)]),
+	@MaxGeneratorRPM = MAX(ft.[Generator Shaft RPMs]),
+	@MaxPressureNewtonsPerSqMeter = MAX(ft.[New Pressure Newtons/sq meter]),
+	@MaxForceNewtons = MAX(ft.[New Force Newtons]),
+	@OverdrivePercentage =
+		CAST((SELECT SUM(CAST(fto.[Seconds in Period] AS FLOAT)) FROM dbo.FinalTable fto WHERE fto.[Generator Input Power kW] > @PerGeneratorKW) AS FLOAT) /
+		@SecondsInYear,
+	@SpillingPercentage =
+		CAST((SELECT SUM(CAST(fto.[Seconds in Period] AS FLOAT)) FROM dbo.FinalTable fto WHERE ISNULL(fto.Spilling,0) = 1) AS FLOAT) /
+		@SecondsInYear,
+	@ActualHoursPctOfTarget = @ActualUnitMWHours / @TargetUnitMWHours,
+	@ActualCapacitykWHours = (@ActualUnitMWHours / @TargetkWNameplate) * 1000,
+	@ActualkWNameplate = (@ActualUnitMWHours / @TargetCapacitykWHours) * 1000,
+	@ActualCapacityFactor = @ActualHoursPctOfTarget * @TargetCapacityFactor,
+	@ExtraHoursInModel = @ActualCapacitykWHours - @TargetCapacitykWHours,
+	@OvershootHours = @ExtraHoursInModel - @MaintenanceHoursAtTargetCapPct,
+	@MaxNetPowerkW = MAX(ft.[Net Power kW]),
+	@MaxGeneratorElectricalPower = MAX(ft.[Electrical Power]),
+	@MaxGeneratorVoltage = MAX(ft.[Generator Voltage])
+FROM dbo.FinalTable ft ;
+
+IF @TargetForceNewtons = 0 AND @SummaryOnly IN (1, 2)BEGIN
+	-- Output Summary
+	SELECT
+		@DSASpeedPoint AS DataPoint,
+		FORMAT(@NumberOfPlates, 'G') AS [Num Wheels],
+		FORMAT(@PlateWidth * 3.28084, 'N') AS [Width ft],
+		FORMAT(@PlateDepth * 3.28084, 'N') AS [Depth ft],
+		FORMAT(@PerGeneratorKW, 'N') AS [Gen Nameplate],
+		FORMAT(@GeneratorOverdriveFactor, 'N') AS [Svc Fac],
+		FORMAT(@SpeedBumpFactor, 'N') AS [Bump],
+		FORMAT(@WaterAccelerationFactor, 'N') AS [Accel],
+		FORMAT(@DragCoefficient, 'N') AS [Drag],
+		FORMAT(@ElectricalEfficiency, '##0.00%') AS [Elec Eff],
+		FORMAT(@MaxRawWaterSpeed, 'N') AS [Max Raw Water],
+		FORMAT(@MaxAcceleratedSpeed, 'N') AS [Max Accel Water],
+		FORMAT(@MaxWheelToWaterRatio, 'N') AS [Max Wheel Ratio],
+		FORMAT(@MaxGeneratorInputPowerkW, 'N') AS [Max Gen Input kW],
+		FORMAT(@MaxNetPowerkW, 'N') AS [Max Net Power kW],
+
+		FORMAT(@MaxPressureNewtonsPerSqMeter, 'N') AS [Max Pressure],
+		FORMAT(@MaxForceNewtons, 'N') AS [Max FORCE],
+		FORMAT(@OverdrivePercentage, '##0.00%') AS [OD Pct],
+		FORMAT(@SpillingPercentage, '##0.00%') AS [Spill Pct],
+
+		FORMAT(@ActualUnitMWHours, 'N') AS [Actual MWh],
+		FORMAT(@ActualkWNameplate, 'N') AS [Act Namplate],
+		FORMAT(@ActualHoursPctOfTarget, '##0.00%') AS [% of 70],
+		FORMAT(@ActualCapacityFactor, '##0.00%') AS [Act Cap %],
+		FORMAT(@OvershootHours, 'N') AS [Overshoot Hrs],
+		FORMAT(@MaxGeneratorRPM, 'N') AS [Max Gen RPM],
+		FORMAT(@MaxGeneratorTorque, 'N') AS [Max Gen Torque],
+		FORMAT(@MaxGeneratorVoltage, 'N') AS [Max Gen Volt],
+		FORMAT(@TargetUnitMWHours, 'N') AS TargetUnitMWHours,
+		FORMAT(@ExtraHoursInModel, 'N') AS ExtraHoursInModel,
+		FORMAT(@PreWettedPlateDepth, 'N') AS PreWettedPlateDepth,
+		FORMAT(@BelowWettedPlate, 'N') AS BelowWettedPlate,
+		FORMAT(@CenterOfWettedPlate, 'N') AS CenterOfWettedPlate,
+		FORMAT(@WheelDiameter, 'N') AS WheelDiameter,
+		FORMAT(@NumberOfGenerators, 'N') AS NumberOfGenerators,
+		FORMAT(@TargetkWNameplate, 'N') AS TargetkWNameplate,
+		FORMAT(@WettedPlateArea, 'N') AS WettedPlateArea,
+		FORMAT(@WettedPlateArea * 10.7639, 'N') AS WettedPlateAreaSqFt,
+		FORMAT(@WaterDensity, 'N') AS WaterDensity,
+		FORMAT(@GearRatio, 'N') AS GearRatio,
+		FORMAT(@MidWettedPlateSpeed, 'N') AS MidWettedPlateSpeed,
+		FORMAT(@KnotsToFtPerSec, 'G') AS KnotsToFtPerSec,
+		FORMAT(@FtLbsPerSecTokW, 'G') AS FtLbsPerSecTokW,
+		FORMAT(@PerGeneratorOverdrive, 'N') AS PerGeneratorOverdrive,
+		FORMAT(@TotalOverdrivekW, 'N') AS TotalOverdrivekW,
+		FORMAT(@MaxGeneratorElectricalPower, 'N') AS MaxGeneratorElectricPower,
+
+		--FORMAT(@CappedNewForce, 'N')AS MaxCappedNewForce,
+		FORMAT(@AnnualHours, 'N') AS AnnualHours,
+		FORMAT(@TargetCapacityFactor, '##0.00%') AS TargetCapacityFactor,
+		FORMAT(@TargetCapacitykWHours, 'N') AS TargetCapacitykWHours,
+		FORMAT(@ActualCapacitykWHours, 'N') AS ActualCapacitykWHours,
+		--FORMAT(@DaysModeled, 'N') AS DaysModeled,
+		FORMAT(@ModeledPctOfYear, '##0.00%') AS ModeledPctOfYear,
+		FORMAT(@NumberOfMaintenanceDays, 'N') AS NumberOfMaintenanceDays,
+		FORMAT(@MaintenanceHoursAtTargetCapPct, 'N') AS MaintenanceHoursAtTargetCapPct,
+		FORMAT(@MaxRawWaterSpeed * @SpeedBumpFactor, 'N') AS [Max Raw Bumped],
+		FORMAT(@TargetForceNewtons, 'G') AS TargetForceNewtons ;
+END ;
+
+-- Output Detail
+IF @SummaryOnly IN (0, 2)BEGIN
+	SELECT TOP(@ReturnTop)
+		ft.*
+
+	FROM dbo.FinalTable ft
+	ORDER BY ft.GMT ;
+END ;
+
+----SELECT
+----	[New Power],
+----	*--	FROM #SumTemp
+----		WHERE [New Power]> @TotalOverdrivekW
+----		ORDER BY 1
+
+----SELECT
+----	CAST(CONVERT(VARCHAR(13), GMT, 20)+ ':00' AS DATETIME2)AS GMTHour,
+----	--CAST(CONVERT(VARCHAR(11), GMT, 20)AS DATETIME2)AS GMTDay,
+
+----	SUM([Seconds in Period])AS [Seconds in Period],
+----	AVG([Speed (M/S)])AS [Speed (M/S)],
+----	AVG([Speed (Knots)])AS [Speed (Knots)],
+----	AVG[Accel Speed Knots]AS [Accel Speed Knots],
+----	--[Tip - Center / Avg Power],
+----	--[Top - Center / Avg Power],
+----	AVG[New Power]AS [New Power],
+----	AVG([Capped New Power])AS [Capped New Power],
+----	AVG([Capped New Power Per Gen])AS [Capped New Power Per Gen],
+----	AVG([Truly Calculated Per Generator Torque(Nm)])AS [Truly Calculated Per Generator Torque(Nm)],
+----	AVG([Generator Losses])as [Generator Losses],
+----	AVG([Generator Efficiency])AS [Generator Efficiency],
+----	AVG([Electrical Power])AS [Electrical Power],
+----	AVG([Electrical Power Per Generator])AS [Electrical Power Per Generator],
+----	AVG([Generator Voltage])AS [Generator Voltage],
+----	AVG([New Net Power kW])AS [New Net Power kW],
+----	SUM([New Net Power Generated kW Seconds])AS [New New Power Generated kW Seconds]
+----	--[Net Power kW],
+----	--[Net Power Generated kW Seconds],
+----	--[Tip - Center /Avg Pressure lbs/sq ft],
+----	--[Top - Center /Avg Pressure lbs/sq ft],
+----	--[New Pressure Newtons/sq meter],
+----	--[Capped New Pressure Newtons/sq meter],
+----	--[Tip - Center / Avg Force Newtons],
+----	--[Top - Center / Avg Force Newtons],
+----	--[New Force Newtons],
+----	--[Capped New Force Newtons],
+----	--[Wheel RPMs RPMs],
+----	--[Capped Wheel RPMs],
+----	--[Generator Shaft RPMs],
+----	--[Capped Generator Shaft RPMs],
+----	--[Mid Wetted Plate Speed M/S],
+----	--[Mid Wetted Plate Speed FtPerSec],
+----	--[Water Velocity Hitting Mid Wetted Plate M/S],
+----	--[Water Velocity Hitting Mid Plate FtPerSec],
+----	--[Mid Wetted Plate Force Newtons],
+----	--[Mid Wetted Plate Pressure Newtons/sq meter],
+----	--[Mid Plate Power ft-lb /second],
+----	--[Mid Wetted Plate Power kW],
+----	--[Tip Velocity Knots],
+----	--[Water Velocity Hitting Tip M/S],
+----	--[Water Velocity Hitting Tip FtPerSec],
+----	--[Tip Force Newtons],
+----	--[Tip Pressure Newtons/sq meter],
+----	--[Tip Power FtLbsPerSec],
+----	--[Tip Power kW],
+----	--[Top Velocity Knots],
+----	--[Water Velocity Hitting Top M/S],
+----	--[Water Velocity Hitting Top FtPerSec],
+----	--[Top Force Newtons],
+----	--[Top Pressure Newtons/sq meter],
+----	--[Top Power FtPerSec],
+----	--[Top Power kW],
+----	--[Gen No OD Max],
+----	--[Spill Point Max]
+----	FROM #SumTemp
+
+----	GROUP BY
+----       		CAST(CONVERT(VARCHAR(13), GMT, 20)+ ':00' AS DATETIME2)--			--CAST(CONVERT(VARCHAR(11), GMT, 20)AS DATETIME2)--	ORDER BY 1

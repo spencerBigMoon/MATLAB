@@ -1,0 +1,37 @@
+d = 1.9;
+W = 18 * .3048;
+rho = 1029;
+R = 13 * .3048;
+
+data = readtable("Predictor_Data/point5.csv");
+speeds = table2array(data(:,"Speed_M_S_"));
+durations = table2array(data(:,"SecondsInPeriod"));
+
+NUM_PLATES = 1; % PREV 2
+% PRE_WET_WHEEL_DEPTH = 7.75
+PRE_WET_WHEEL_DEPTH = 2.3622; % METERS I THINK This needs to be updated to 60% I think
+PLATE_DEPTH = 13 * .3048;
+PLATE_WIDTH = 18 * .3048;
+% PLATE_DEPTH = 13
+WET_AREA = NUM_PLATES * PLATE_DEPTH * PLATE_WIDTH;
+CENTER_OF_WET_PLT = PRE_WET_WHEEL_DEPTH + (.5 * PLATE_DEPTH); % Radius to center
+NUM_GENERATOR = 1;
+ACCEL_FACTOR = 1.57;
+LTS_GEAR_RATIO = 51.48;
+
+
+accel_speed = ACCEL_FACTOR .* speeds;
+
+
+wheel_rpm = (1./3.*accel_speed ./ ((PRE_WET_WHEEL_DEPTH + (.5 .* PLATE_DEPTH)) .* 2 .* pi)) .* 60;
+
+
+omega_d = wheel_rpm * 6; % Degrees per second
+omega_r = omega_d * pi / 180; % Radians per second
+
+R = PLATE_DEPTH + PRE_WET_WHEEL_DEPTH;
+my_power1 = 1 ./ 2000 .* d .* rho .* W .* omega_r .* ((accel_speed .^ 2) ./ 2 .* (R .^ 2) - 2 ./ 3 .* omega_r .* accel_speed .* (R .^ 3) + omega_r .^ 2 ./ 4 .* (R .^ 4))
+R = PRE_WET_WHEEL_DEPTH
+my_power2 = 1 ./ 2000 .* d .* rho .* W .* omega_r .* ((accel_speed .^ 2) ./ 2 .* (R .^ 2) - 2 ./ 3 .* omega_r .* accel_speed .* (R .^ 3) + omega_r .^ 2 ./ 4 .* (R .^ 4))
+
+my_power = my_power1 - my_power2

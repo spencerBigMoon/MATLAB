@@ -1,0 +1,256 @@
+/****** Object:  StoredProcedure [dbo].[BMPPowerPredictorLoop]    Script Date: 4/12/2022 8:29:40 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[BMPPowerPredictorLoop]
+(
+	@CenterOfWettedPlate FLOAT,
+	@GearRatio FLOAT,
+	@DragCoefficient FLOAT,
+	@WaterDensity FLOAT,
+	@WettedPlateArea FLOAT,
+	@PreWettedPlateDepth FLOAT,
+	@PlateDepth FLOAT,
+	@NumberOfGenerators FLOAT,
+	@RatedRPM FLOAT,
+	@PerGeneratorKW FLOAT,
+	@FrictionLoss FLOAT,
+	@RatedVolts FLOAT,
+	@TotalOverdrivekW FLOAT,
+	@RatedTorque FLOAT,
+	@ElectricalEfficiency FLOAT,
+	@AmpsLoss FLOAT
+)
+
+AS
+
+DECLARE @GeneratorConstant FLOAT = 9538.88658409518;
+
+
+------------------------- Recalculate if Torque is too high
+UPDATE dbo.FinalTable
+	SET
+		[New Target Generator RPMs] =
+			CASE
+				WHEN [New Target Torque] IS NOT NULL THEN
+					[Generator Input Power kW] * @GeneratorConstant / [New Target Torque]
+				ELSE
+					NULL
+			END
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+	SET
+		[Mid Wetted Plate Speed M/S] =
+			CASE
+				WHEN [New Target Generator RPMs] IS NOT NULL THEN
+					([New Target Generator RPMs] * @CenterOfWettedPlate * 2 * PI()) / (@GearRatio * 60)
+				ELSE
+					[Mid Wetted Plate Speed M/S]
+			END
+FROM dbo.FinalTable WHERE 1=1
+
+
+
+
+
+---------------------------------------- Now recalculate based upon the new Plate Speed
+
+-- Mid Wetted Plate
+UPDATE dbo.FinalTable
+SET
+	[Wheel To Water Speed Ratio] = [Mid Wetted Plate Speed M/S] / [Accel Water Speed (M/S)]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Water Velocity Hitting Mid Wetted Plate M/S] = [Accel Water Speed (M/S)] - [Mid Wetted Plate Speed M/S]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE
+	dbo.FinalTable
+SET
+	[Mid Wetted Plate Force Newtons] = 0.5 * @DragCoefficient * @WaterDensity * @WettedPlateArea
+									   * (POWER([Water Velocity Hitting Mid Wetted Plate M/S], 2))
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Mid Wetted Plate Pressure Newtons/sq meter] = [Mid Wetted Plate Force Newtons] / @WettedPlateArea
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Mid Wetted Plate Power kW] = ([Mid Wetted Plate Force Newtons] * [Mid Wetted Plate Speed M/S]) / 1000
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Tip
+UPDATE dbo.FinalTable
+SET [Tip Speed M/S] = (@PreWettedPlateDepth + @PlateDepth) / @CenterOfWettedPlate * [Mid Wetted Plate Speed M/S]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Water Velocity Hitting Tip M/S] = [Accel Water Speed (M/S)] - [Tip Speed M/S]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE
+	dbo.FinalTable
+SET
+	[Tip Force Newtons] = 0.5 * @DragCoefficient * @WaterDensity * @WettedPlateArea
+						  * (POWER([Water Velocity Hitting Tip M/S], 2))
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Tip Pressure Newtons/sq meter] = [Tip Force Newtons] / @WettedPlateArea
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Tip Power kW] = ([Tip Force Newtons] * [Tip Speed M/S]) / 1000
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Top
+UPDATE dbo.FinalTable
+SET [Top Speed M/S] = @PreWettedPlateDepth / @CenterOfWettedPlate * [Mid Wetted Plate Speed M/S]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Water Velocity Hitting Top M/S] = [Accel Water Speed (M/S)] - [Top Speed M/S]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE
+	dbo.FinalTable
+SET
+	[Top Force Newtons] = 0.5 * @DragCoefficient * @WaterDensity * @WettedPlateArea
+						  * (POWER([Water Velocity Hitting Top M/S], 2))
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Top Pressure Newtons/sq meter] = [Top Force Newtons] / @WettedPlateArea
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Top Power kW] = ([Top Force Newtons] * [Top Speed M/S]) / 1000
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Power kW
+UPDATE dbo.FinalTable
+SET
+	[Tip - Center / Avg Power] = ([Tip Power kW] + [Mid Wetted Plate Power kW]) / 2,
+	[Top - Center / Avg Power] = ([Top Power kW] + [Mid Wetted Plate Power kW]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Generator Input Power kW] = ([Tip - Center / Avg Power] + [Top - Center / Avg Power]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Force Newtons
+UPDATE dbo.FinalTable
+SET
+	[Tip - Center / Avg Force Newtons] = ([Tip Force Newtons] + [Mid Wetted Plate Force Newtons]) / 2,
+	[Top - Center / Avg Force Newtons] = ([Top Force Newtons] + [Mid Wetted Plate Force Newtons]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [New Force Newtons] = ([Tip - Center / Avg Force Newtons] + [Top - Center / Avg Force Newtons]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Pressure Newtons/sq meter
+UPDATE
+	dbo.FinalTable
+SET
+	[Tip - Center / Avg Pressure Newtons/sq meter] = ([Tip Pressure Newtons/sq meter]
+													  + [Mid Wetted Plate Pressure Newtons/sq meter]) / 2,
+	[Top - Center / Avg Pressure Newtons/sq meter] = ([Top Pressure Newtons/sq meter]
+													  + [Mid Wetted Plate Pressure Newtons/sq meter]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE
+	dbo.FinalTable
+SET
+	[New Pressure Newtons/sq meter] = ([Tip - Center / Avg Pressure Newtons/sq meter]
+									   + [Top - Center / Avg Pressure Newtons/sq meter]) / 2
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Wheel RPMs
+UPDATE
+	dbo.FinalTable
+SET
+	[Wheel RPMs RPMs] = ([Mid Wetted Plate Speed M/S] / ((@PreWettedPlateDepth + (0.5 * @PlateDepth)) * 2 * PI()))
+						* 60
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Generator Shaft RPMs
+UPDATE dbo.FinalTable
+SET [Generator Shaft RPMs] = [Wheel RPMs RPMs] * @GearRatio
+FROM dbo.FinalTable WHERE 1=1
+
+
+-- Generator Info
+UPDATE dbo.FinalTable
+SET [Generator Torque (Nm)] = (([Generator Input Power kW] / @NumberOfGenerators) * @GeneratorConstant) / [Generator Shaft RPMs]
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET [Power Per Generator kW] = [Generator Input Power kW] / @NumberOfGenerators
+FROM dbo.FinalTable WHERE 1=1
+
+UPDATE
+	dbo.FinalTable
+SET
+	[Generator Losses] = (([Generator Shaft RPMs] / @RatedRPM * @FrictionLoss)
+						  + ([Generator Torque (Nm)] / @RatedTorque * @AmpsLoss)) * @NumberOfGenerators
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET
+	[Generator Efficiency] = ([Generator Input Power kW] - [Generator Losses]) / [Generator Input Power kW],
+	[Electrical Power] = CASE
+							 WHEN [Generator Input Power kW] - [Generator Losses] < 0 THEN 0
+							 ELSE [Generator Input Power kW] - [Generator Losses]
+						 END
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET
+	[Electrical Power Per Generator] = [Electrical Power] / @NumberOfGenerators,
+	[Generator Voltage] = [Generator Shaft RPMs] / @RatedRPM * @RatedVolts,
+	[Net Power kW] = [Electrical Power] * @ElectricalEfficiency
+FROM dbo.FinalTable WHERE 1=1
+
+
+UPDATE dbo.FinalTable
+SET
+	[Net Power Generated kW Seconds] = [Net Power kW] * [Seconds in Period],
+	[Gen No OD Max] = @PerGeneratorKW * @NumberOfGenerators,
+	[Spill Point Max] = @TotalOverdrivekW
+FROM dbo.FinalTable WHERE 1=1
+
+
+
+
+
+

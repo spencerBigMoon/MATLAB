@@ -1,0 +1,13 @@
+% Fit y = 4x + 7x^2
+
+x = 100 * rand(100,1);
+x_tilde = randn(100,1);
+y = 4 .* x + 7 .* x .^ 2;
+y_tilde = randn(100,1);
+
+X = x + x_tilde;
+Y = y + y_tilde;
+
+[U, S, V] = svd([X Y])
+
+a_tls = -V(1:2, 2) / V(2, 2)
